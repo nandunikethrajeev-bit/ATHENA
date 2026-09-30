@@ -1,0 +1,18 @@
+# ATHENA — runtime dependencies
+#
+# M0 (project foundation): intentionally empty of runtime packages.
+# The foundation uses only the Python standard library so it runs on a clean
+# interpreter. Dependencies will be added milestone-by-milestone, kept minimal,
+# and pinned here — e.g. HTTP clients and data validation in M1; embedding and
+# vector-store libraries only in M3, after wheel compatibility is verified on
+# the chosen Python version.
+#
+# Heavy AI frameworks (LangChain, LangGraph, CrewAI, Chroma, FAISS, PyTorch,
+# Transformers, ...) are deliberately NOT installed in M0.
+#
+# Runtime dependencies (M1: literature retrieval HTTP client)
+httpx>=0.27.0
+
+# --- Development / test dependencies ---
+# Required to run the test suite (python -m pytest).
+pytest>=8.0

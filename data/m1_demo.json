@@ -1,0 +1,80 @@
+{
+  "query": "machine learning Alzheimer disease",
+  "retrieved_count": 3,
+  "source": "OpenAlex",
+  "papers": [
+    {
+      "title": "A survey on deep learning in medical image analysis",
+      "openalex_id": "https://openalex.org/W2592929672",
+      "source": "OpenAlex",
+      "authors": [
+        "Geert J. S. Litjens",
+        "Thijs Kooi",
+        "Babak Ehteshami Bejnordi",
+        "Arnaud A. A. Setio",
+        "Francesco Ciompi",
+        "Mohsen Ghafoorian",
+        "Jeroen van der Laak",
+        "Bram van Ginneken",
+        "Clara I. Sá‎nchez"
+      ],
+      "publication_year": 2017,
+      "doi": "https://doi.org/10.1016/j.media.2017.07.005",
+      "abstract": null,
+      "venue": "Medical Image Analysis",
+      "cited_by_count": 15370,
+      "publication_type": "article",
+      "landing_page_url": "https://doi.org/10.1016/j.media.2017.07.005",
+      "open_access": {
+        "is_oa": true,
+        "oa_status": "bronze",
+        "oa_url": "https://ars.els-cdn.com/content/image/1-s2.0-S1361841517301135-fx1_lrg.jpg"
+      },
+      "raw_id": "https://openalex.org/W2592929672"
+    },
+    {
+      "title": "Alzheimer Disease Prediction using Machine Learning Algorithms",
+      "openalex_id": "https://openalex.org/W3018492956",
+      "source": "OpenAlex",
+      "authors": [
+        "J. Neelaveni",
+        "M.S. Geetha Devasana"
+      ],
+      "publication_year": 2020,
+      "doi": "https://doi.org/10.1109/icaccs48705.2020.9074248",
+      "abstract": "Alzheimer disease is the one amongst neurodegenerative disorders. Though the symptoms are benign initially, they become more severe over time. Alzheimer's disease is a prevalent sort of dementia. This disease is challenging one because there is no treatment for the disease. Diagnosis of the disease is done but that too at the later stage only. Thus if the disease is predicted earlier, the progression or the symptoms of the disease can be slow down. This paper uses machine learning algorithms to predict the Alzheimer disease using psychological parameters like age, number of visit, MMSE and education.",
+      "venue": null,
+      "cited_by_count": 109,
+      "publication_type": "conference-paper",
+      "landing_page_url": "https://doi.org/10.1109/icaccs48705.2020.9074248",
+      "open_access": {
+        "is_oa": false,
+        "oa_status": "closed",
+        "oa_url": null
+      },
+      "raw_id": "https://openalex.org/W3018492956"
+    },
+    {
+      "title": "Machine learning techniques for diagnosis of alzheimer disease, mild cognitive disorder, and other types of dementia",
+      "openalex_id": "https://openalex.org/W3212684309",
+      "source": "OpenAlex",
+      "authors": [
+        "Golrokh Mirzaei",
+        "Hojjat Adeli"
+      ],
+      "publication_year": 2021,
+      "doi": "https://doi.org/10.1016/j.bspc.2021.103293",
+      "abstract": null,
+      "venue": "Biomedical Signal Processing and Control",
+      "cited_by_count": 219,
+      "publication_type": "article",
+      "landing_page_url": "https://doi.org/10.1016/j.bspc.2021.103293",
+      "open_access": {
+        "is_oa": false,
+        "oa_status": "closed",
+        "oa_url": null
+      },
+      "raw_id": "https://openalex.org/W3212684309"
+    }
+  ]
+}
