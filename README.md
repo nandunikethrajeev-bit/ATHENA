@@ -7,9 +7,9 @@ scientific literature, organizing evidence, synthesizing findings across
 studies, identifying candidate research gaps, generating candidate hypotheses,
 and producing source-traceable research reports.
 
-> **Status: early development (M0 — project foundation & M1 — scientific literature retrieval complete).**
-> ATHENA can now retrieve real scientific literature and abstracts from OpenAlex.
-> Subsequent stages (evidence ingestion, RAG, synthesis, hypothesis generation) remain planned.
+> **Status: early development (M0 — project foundation, M1 — scientific literature retrieval, and M2 — document processing & evidence retrieval complete).**
+> ATHENA can now retrieve real scientific literature and abstracts from OpenAlex, clean scientific text, extract traceable evidence chunks, and rank evidence using deterministic BM25 retrieval.
+> Subsequent stages (synthesis, hypothesis generation, verification) remain planned.
 
 ## What ATHENA is — and is not
 
@@ -60,8 +60,8 @@ Research Question
 |---|---|---|
 | M0 | Environment & project foundation | ✅ complete |
 | M1 | Scientific literature retrieval (free/public APIs) | ✅ complete |
-| M2 | Paper metadata & document processing | planned |
-| M3 | Evidence retrieval / RAG (local embeddings & index) | planned |
+| M2 | Document processing & evidence retrieval | ✅ complete |
+| M3 | Local embeddings & dense semantic index | planned |
 | M4 | Evidence synthesis | planned |
 | M5 | Candidate research-gap analysis | planned |
 | M6 | Candidate hypothesis generation | planned |
@@ -128,6 +128,27 @@ python -m pytest -m integration
 - **Search Rate Limits**: OpenAlex anonymous searches are subject to rate limiting during periods of elevated search cluster load. Users can set `OPENALEX_API_KEY` (a free key obtained from [openalex.org/settings/api](https://openalex.org/settings/api)) or provide `OPENALEX_EMAIL` for polite pool access.
 - **Scope**: M1 only retrieves metadata and abstracts; evidence extraction, chunking, embeddings, and hypothesis generation are deferred to subsequent milestones.
 
+## M2 — Document Processing & Evidence Retrieval
+
+Milestone M2 converts retrieved literature into discrete, traceable evidence items and provides deterministic in-memory BM25 retrieval without requiring paid APIs or heavy vector databases.
+
+### Key Capabilities:
+- **Scientific Text Cleaning**: Normalizes typography and whitespace while strictly preserving chemical formulas ($H_2O$, $CO_2$), statistical values ($p < 0.05$, $95\% CI$), and scientific units ($mg/kg$, $\mu g/mL$).
+- **Evidence Chunking**: Splits abstracts into cohesive sentence windows while respecting scientific abbreviations (`et al.`, `e.g.`, `Fig.`). Papers without indexed abstracts produce explicit `metadata` chunks, ensuring abstracts are never fabricated.
+- **Evidence Classification**: Explicitly distinguishes between `metadata`, `abstract`, and `full_text` evidence classes.
+- **Source Traceability**: Every chunk retains an immutable `EvidenceSource` containing its OpenAlex ID, DOI, landing page URL, title, authors, and year.
+- **In-Memory BM25 Retrieval**: Fast, deterministic lexical retrieval using pure-Python standard library BM25Okapi ($k_1=1.5, b=0.75$).
+
+### How to Run Literature Search with Evidence Extraction:
+
+```bash
+# Retrieve papers AND extract/rank evidence chunks
+python -m app.main "Can machine learning improve early detection of Alzheimer's disease?" --extract-evidence
+
+# Limit evidence chunks to top 3 and export both metadata and evidence
+python -m app.main "Alzheimer biomarkers" --extract-evidence --top-k 3 --export data/evidence.json
+```
+
 ## Project structure
 
 ```
@@ -135,21 +156,32 @@ ATHENA/
 ├── app/                  # Application package
 │   ├── __init__.py       # Package metadata & milestone status
 │   ├── main.py           # CLI entry point & demonstration
-│   └── retrieval/        # Literature retrieval subsystem (M1)
-│       ├── __init__.py   # Retrieval API exports
-│       ├── exceptions.py # Domain errors & rate limit types
-│       ├── models.py     # Paper & OpenAccess data models
-│       ├── openalex.py   # OpenAlex REST client & work parser
-│       └── utils.py      # Abstract reconstructor & query validator
+│   ├── retrieval/        # Literature retrieval subsystem (M1)
+│   │   ├── __init__.py   # Retrieval API exports
+│   │   ├── exceptions.py # Domain errors & rate limit types
+│   │   ├── models.py     # Paper & OpenAccess data models
+│   │   ├── openalex.py   # OpenAlex REST client & work parser
+│   │   └── utils.py      # Abstract reconstructor & query validator
+│   └── evidence/         # Document processing & evidence retrieval (M2)
+│       ├── __init__.py   # Evidence API exports
+│       ├── cleaner.py    # Scientific text normalizer
+│       ├── models.py     # NormalizedDocument, EvidenceChunk, EvidenceMatch
+│       ├── normalizer.py # Paper to NormalizedDocument transformer
+│       ├── chunker.py    # Scientific sentence splitter & chunker
+│       ├── retriever.py  # In-memory BM25Okapi search engine
+│       └── context.py    # Context assembly & citation formatting
 ├── tests/                # Test suite
 │   ├── __init__.py
 │   ├── test_foundation.py     # M0 foundation tests
 │   ├── test_retrieval.py      # M1 unit tests (offline/mocked)
-│   └── test_openalex_live.py  # M1 live integration test
+│   ├── test_openalex_live.py  # M1 live integration test
+│   └── test_evidence.py       # M2 evidence & retrieval unit tests
 ├── data/                 # Research data (generated locally; not committed)
 │   ├── raw/
 │   └── processed/
 ├── docs/                 # Documentation
+│   ├── README.md
+│   └── M2_EVIDENCE_SYSTEM.md  # Detailed M2 architecture specification
 ├── .env.example          # Placeholder environment variables
 ├── .gitignore
 ├── pyproject.toml

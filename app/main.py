@@ -3,10 +3,12 @@
 Milestones supported:
 - M0: Project foundation
 - M1: Scientific literature retrieval from OpenAlex
+- M2: Evidence retrieval & document processing
 
 Usage:
     python -m app.main                                  # Verify system startup / banner
     python -m app.main "research question"              # Retrieve scientific papers
+    python -m app.main "research question" --extract-evidence   # Extract and retrieve evidence
     python -m app.main "research question" --max-results 5 --export data/results.json
 """
 
@@ -18,6 +20,12 @@ from typing import Sequence
 
 try:
     from app import __version__
+    from app.evidence import (
+        EvidenceIndex,
+        build_evidence_context,
+        chunk_documents,
+        normalize_paper,
+    )
     from app.retrieval import (
         OpenAlexRateLimitError,
         OpenAlexNetworkError,
@@ -30,6 +38,12 @@ except ModuleNotFoundError:  # pragma: no cover - direct-script fallback
     # when this file is executed as a plain script.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from app import __version__
+    from app.evidence import (
+        EvidenceIndex,
+        build_evidence_context,
+        chunk_documents,
+        normalize_paper,
+    )
     from app.retrieval import (
         OpenAlexRateLimitError,
         OpenAlexNetworkError,
@@ -89,10 +103,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Maximum number of papers to retrieve (1 to 50, default: 10)",
     )
     parser.add_argument(
+        "--extract-evidence",
+        action="store_true",
+        default=False,
+        help="Extract, chunk, index, and retrieve relevant evidence chunks (Milestone M2)",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Number of top evidence chunks to retrieve with --extract-evidence (default: 5)",
+    )
+    parser.add_argument(
         "--export",
         type=str,
         default=None,
-        help="Optional path to export retrieved paper metadata as a JSON file",
+        help="Optional path to export retrieved paper metadata and evidence as a JSON file",
     )
     parser.add_argument(
         "--email",
@@ -112,11 +138,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Bare invocation: print system startup banner and usage instructions
     if args.query is None:
         print(f"ATHENA v{__version__} - Autonomous Scientific Intelligence")
-        print("Status: project foundation (M0) active. Literature retrieval (M1) ready.")
-        print('Usage: python -m app.main "<research question>" [--max-results N] [--export output.json]')
+        print("Status: project foundation (M0) active. Literature retrieval (M1) ready. Evidence retrieval (M2) ready.")
+        print('Usage: python -m app.main "<research question>" [--extract-evidence] [--max-results N] [--export output.json]')
         return 0
 
-    print(f"ATHENA v{__version__} — Literature Retrieval (M1)")
+    print(f"ATHENA v{__version__} — Scientific Research Assistant")
     print(f"Searching OpenAlex for: {args.query!r} (max_results={args.max_results})...\n")
 
     try:
@@ -154,6 +180,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_paper_summary(i, paper))
         print("-" * 72)
 
+    # M2 Evidence extraction and retrieval
+    extracted_docs = []
+    all_chunks = []
+    retrieved_matches = []
+
+    if args.extract_evidence:
+        print(f"\n[M2] Normalizing documents and extracting evidence chunks...")
+        extracted_docs = [normalize_paper(p) for p in papers]
+        all_chunks = chunk_documents(extracted_docs)
+        print(f"[M2] Extracted {len(all_chunks)} chunk(s) across {len(extracted_docs)} paper(s).")
+
+        index = EvidenceIndex()
+        index.index_chunks(all_chunks)
+        retrieved_matches = index.retrieve(query=args.query, top_k=args.top_k)
+
+        context_output = build_evidence_context(
+            query=args.query,
+            matches=retrieved_matches,
+            total_papers=count,
+            total_chunks=len(all_chunks),
+        )
+        print(f"\n{context_output}")
+
     if args.export:
         export_path = Path(args.export)
         try:
@@ -164,11 +213,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "source": "OpenAlex",
                 "papers": [p.to_dict() for p in papers],
             }
+            if args.extract_evidence:
+                export_data["evidence_chunks_count"] = len(all_chunks)
+                export_data["evidence_chunks"] = [c.to_dict() for c in all_chunks]
+                export_data["retrieved_matches"] = [m.to_dict() for m in retrieved_matches]
+
             with open(export_path, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
-            print(f"\nSaved metadata for {count} paper(s) to: {export_path}")
+            print(f"\nSaved results for {count} paper(s) to: {export_path}")
         except Exception as exc:
-            print(f"Warning: Failed to export metadata to {export_path}: {exc}", file=sys.stderr)
+            print(f"Warning: Failed to export results to {export_path}: {exc}", file=sys.stderr)
 
     return 0
 
