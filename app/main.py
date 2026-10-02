@@ -4,11 +4,13 @@ Milestones supported:
 - M0: Project foundation
 - M1: Scientific literature retrieval from OpenAlex
 - M2: Evidence retrieval & document processing
+- M3: Scientific evidence synthesis & claim grounding
 
 Usage:
-    python -m app.main                                  # Verify system startup / banner
-    python -m app.main "research question"              # Retrieve scientific papers
-    python -m app.main "research question" --extract-evidence   # Extract and retrieve evidence
+    python -m app.main                                          # Verify system startup / banner
+    python -m app.main "research question"                      # Retrieve scientific papers (M1)
+    python -m app.main "research question" --extract-evidence   # Extract and retrieve evidence (M2)
+    python -m app.main "research question" --extract-evidence --synthesize --llm-provider mock  # Synthesize (M3)
     python -m app.main "research question" --max-results 5 --export data/results.json
 """
 
@@ -33,6 +35,12 @@ try:
         RetrievalError,
         search_papers,
     )
+    from app.synthesis import (
+        EvidenceContext,
+        LLMConfigurationError,
+        Synthesizer,
+        get_llm_client,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct-script fallback
     # Put the project root on sys.path so the "app" package resolves
     # when this file is executed as a plain script.
@@ -50,6 +58,12 @@ except ModuleNotFoundError:  # pragma: no cover - direct-script fallback
         QueryValidationError,
         RetrievalError,
         search_papers,
+    )
+    from app.synthesis import (
+        EvidenceContext,
+        LLMConfigurationError,
+        Synthesizer,
+        get_llm_client,
     )
 
 
@@ -82,9 +96,21 @@ def format_paper_summary(index: int, paper) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """ATHENA CLI entry point supporting system verification and literature retrieval."""
+    """ATHENA CLI entry point supporting system verification, literature retrieval, and evidence synthesis."""
     if argv is None:
         argv = []
+
+    # Configure UTF-8 encoding with fallback replacement for Windows consoles
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
     parser = argparse.ArgumentParser(
         prog="athena",
@@ -115,10 +141,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Number of top evidence chunks to retrieve with --extract-evidence (default: 5)",
     )
     parser.add_argument(
+        "--synthesize",
+        action="store_true",
+        default=False,
+        help="Synthesize retrieved evidence into structured scientific claims (Milestone M3)",
+    )
+    parser.add_argument(
+        "--llm-provider",
+        type=str,
+        default=None,
+        help="LLM provider for synthesis: mock, openai, ollama, openrouter (default: from ATHENA_LLM_PROVIDER)",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default=None,
+        help="Model name for synthesis (e.g. gpt-4o-mini, llama3.1:8b)",
+    )
+    parser.add_argument(
         "--export",
         type=str,
         default=None,
-        help="Optional path to export retrieved paper metadata and evidence as a JSON file",
+        help="Optional path to export retrieved paper metadata, evidence, and synthesis as a JSON file",
     )
     parser.add_argument(
         "--email",
@@ -138,9 +182,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Bare invocation: print system startup banner and usage instructions
     if args.query is None:
         print(f"ATHENA v{__version__} - Autonomous Scientific Intelligence")
-        print("Status: project foundation (M0) active. Literature retrieval (M1) ready. Evidence retrieval (M2) ready.")
-        print('Usage: python -m app.main "<research question>" [--extract-evidence] [--max-results N] [--export output.json]')
+        print("Status: project foundation (M0) active. Literature retrieval (M1) ready. Evidence retrieval (M2) ready. Evidence synthesis (M3) ready.")
+        print('Usage: python -m app.main "<research question>" [--extract-evidence] [--synthesize] [--llm-provider mock] [--max-results N] [--export output.json]')
         return 0
+
+    # Auto-enable evidence extraction if synthesis is requested
+    if args.synthesize and not args.extract_evidence:
+        args.extract_evidence = True
 
     print(f"ATHENA v{__version__} — Scientific Research Assistant")
     print(f"Searching OpenAlex for: {args.query!r} (max_results={args.max_results})...\n")
@@ -203,6 +251,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(f"\n{context_output}")
 
+    # M3 Evidence synthesis
+    synthesis = None
+    if args.synthesize:
+        print(f"\n[M3] Synthesizing evidence using LLM provider...")
+        try:
+            client = get_llm_client(
+                provider=args.llm_provider,
+                model=args.llm_model,
+            )
+            synthesizer = Synthesizer(client=client)
+            evidence_ctx = EvidenceContext(
+                query=args.query,
+                matches=retrieved_matches,
+                total_papers=count,
+                total_chunks=len(all_chunks),
+            )
+            synthesis = synthesizer.synthesize(
+                research_question=args.query,
+                evidence_context=evidence_ctx,
+            )
+            print(f"\n{synthesis.to_markdown()}")
+        except LLMConfigurationError as exc:
+            print(f"\n[LLM Configuration Error] {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"\n[Synthesis Error] Failed to synthesize evidence: {exc}", file=sys.stderr)
+            return 1
+
     if args.export:
         export_path = Path(args.export)
         try:
@@ -217,6 +293,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 export_data["evidence_chunks_count"] = len(all_chunks)
                 export_data["evidence_chunks"] = [c.to_dict() for c in all_chunks]
                 export_data["retrieved_matches"] = [m.to_dict() for m in retrieved_matches]
+            if args.synthesize and synthesis is not None:
+                export_data["synthesis"] = synthesis.to_dict()
 
             with open(export_path, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)

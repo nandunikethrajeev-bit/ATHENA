@@ -6,8 +6,9 @@ Milestone status
     M0  project foundation (complete)
     M1  scientific literature retrieval (complete)
     M2  evidence retrieval & document processing (complete)
-    Later milestones add evidence synthesis, candidate gap analysis,
-    candidate hypothesis generation, verification, and reporting.
+    M3  scientific evidence synthesis & claim grounding (complete)
+    Later milestones add candidate gap analysis, candidate hypothesis
+    generation, verification, and reporting.
 
 Every important scientific claim produced by ATHENA will be traceable to
 retrieved evidence wherever possible.

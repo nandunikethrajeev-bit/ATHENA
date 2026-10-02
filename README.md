@@ -7,9 +7,9 @@ scientific literature, organizing evidence, synthesizing findings across
 studies, identifying candidate research gaps, generating candidate hypotheses,
 and producing source-traceable research reports.
 
-> **Status: early development (M0 — project foundation, M1 — scientific literature retrieval, and M2 — document processing & evidence retrieval complete).**
-> ATHENA can now retrieve real scientific literature and abstracts from OpenAlex, clean scientific text, extract traceable evidence chunks, and rank evidence using deterministic BM25 retrieval.
-> Subsequent stages (synthesis, hypothesis generation, verification) remain planned.
+> **Status: active development (M0 — project foundation, M1 — scientific literature retrieval, M2 — document processing & evidence retrieval, and M3 — scientific evidence synthesis complete).**
+> ATHENA can now retrieve real scientific literature from OpenAlex, clean scientific text, chunk and rank evidence using deterministic BM25 retrieval, and synthesize structured, evidence-grounded scientific claims with provenance validation.
+> Subsequent stages (research-gap analysis, hypothesis generation, report generation) remain planned.
 
 ## What ATHENA is — and is not
 
@@ -61,14 +61,13 @@ Research Question
 | M0 | Environment & project foundation | ✅ complete |
 | M1 | Scientific literature retrieval (free/public APIs) | ✅ complete |
 | M2 | Document processing & evidence retrieval | ✅ complete |
-| M3 | Local embeddings & dense semantic index | planned |
-| M4 | Evidence synthesis | planned |
-| M5 | Candidate research-gap analysis | planned |
-| M6 | Candidate hypothesis generation | planned |
-| M7 | Critic / evidence verification | planned |
-| M8 | Research report generation | planned |
-| M9 | Streamlit interface | planned |
-| M10 | Evaluation, testing & demo preparation | planned |
+| M3 | Scientific evidence synthesis & claim grounding | ✅ complete |
+| M4 | Candidate research-gap analysis | planned |
+| M5 | Candidate hypothesis generation | planned |
+| M6 | Critic / evidence verification | planned |
+| M7 | Research report generation | planned |
+| M8 | Streamlit interface | planned |
+| M9 | Evaluation, testing & demo preparation | planned |
 
 ## M1 — Scientific Literature Retrieval
 
@@ -149,6 +148,41 @@ python -m app.main "Can machine learning improve early detection of Alzheimer's 
 python -m app.main "Alzheimer biomarkers" --extract-evidence --top-k 3 --export data/evidence.json
 ```
 
+## M3 — Scientific Evidence Synthesis
+
+Milestone M3 transforms ranked evidence items into a structured, evidence-grounded scientific synthesis. ATHENA does **not** perform generic, ungrounded paper summarization. Instead, the model is strictly constrained to synthesize findings solely from controlled evidence chunks retrieved by M2, and every scientific claim is cross-validated against genuine chunk identifiers.
+
+> **Scope Boundary**:
+> M3 synthesizes evidence supplied by M2 and validates claim grounding.
+> M3 does **not** perform candidate research-gap discovery (M4), hypothesis generation (M5), critic verification (M6), automated experimentation, or autonomous scientific discovery. Those capabilities belong to subsequent milestones.
+
+### Key Capabilities:
+- **Model-Agnostic LLM Layer**: Protocol-driven `LLMClient` supporting:
+  - `mock`: 100% offline, zero-network, deterministic client for development and tests (no API key required).
+  - `ollama`: Free local inference using OpenAI-compatible endpoints (`http://localhost:11434/v1`) without paid services.
+  - `openai` / `openrouter`: Commercial or open-router endpoints using the existing `httpx` client.
+- **Strict Grounding Prompts**: Prompts explicitly forbid hallucinating citations, authors, DOIs, or findings, and enforce structured JSON output.
+- **Claim & Citation Validation Engine**:
+  - Validates every cited evidence ID against input `EvidenceChunk` IDs.
+  - Categorizes claims as `SUPPORTED`, `PARTIALLY_VALID`, or `UNSUPPORTED`.
+  - Flags phantom/hallucinated citations in `invalid_evidence_ids`.
+  - Computes an objective `grounding_score` ($\text{valid\_citations} / \max(1, \text{total\_citations})$).
+- **Full Provenance Preservation**: Maps every verified citation directly back to its originating paper title, authors, publication year, venue, DOI, and OpenAlex ID.
+- **Zero-Evidence Safe Fallback**: When no evidence is retrieved, ATHENA returns a structured notice of insufficient evidence without invoking the LLM.
+
+### How to Run Evidence Synthesis:
+
+```bash
+# Offline synthesis using the mock provider (no API key or network required)
+python -m app.main "perovskite solar cell efficiency" --extract-evidence --top-k 5 --synthesize --llm-provider mock
+
+# Export synthesis and literature data to JSON
+python -m app.main "CRISPR base editing" --synthesize --llm-provider mock --export data/synthesis.json
+
+# Using a local Ollama server (e.g. llama3.1:8b)
+python -m app.main "mRNA vaccine stability" --synthesize --llm-provider ollama --llm-model llama3.1:8b
+```
+
 ## Project structure
 
 ```
@@ -162,20 +196,28 @@ ATHENA/
 │   │   ├── models.py     # Paper & OpenAccess data models
 │   │   ├── openalex.py   # OpenAlex REST client & work parser
 │   │   └── utils.py      # Abstract reconstructor & query validator
-│   └── evidence/         # Document processing & evidence retrieval (M2)
-│       ├── __init__.py   # Evidence API exports
-│       ├── cleaner.py    # Scientific text normalizer
-│       ├── models.py     # NormalizedDocument, EvidenceChunk, EvidenceMatch
-│       ├── normalizer.py # Paper to NormalizedDocument transformer
-│       ├── chunker.py    # Scientific sentence splitter & chunker
-│       ├── retriever.py  # In-memory BM25Okapi search engine
-│       └── context.py    # Context assembly & citation formatting
+│   ├── evidence/         # Document processing & evidence retrieval (M2)
+│   │   ├── __init__.py   # Evidence API exports
+│   │   ├── cleaner.py    # Scientific text normalizer
+│   │   ├── models.py     # NormalizedDocument, EvidenceChunk, EvidenceMatch
+│   │   ├── normalizer.py # Paper to NormalizedDocument transformer
+│   │   ├── chunker.py    # Scientific sentence splitter & chunker
+│   │   ├── retriever.py  # In-memory BM25Okapi search engine
+│   │   └── context.py    # Context assembly & citation formatting
+│   └── synthesis/        # Scientific evidence synthesis (M3)
+│       ├── __init__.py   # Synthesis API exports
+│       ├── models.py     # ResearchSynthesis, SynthesizedClaim, EvidenceReference
+│       ├── prompts.py    # Deterministic prompt construction & integrity clauses
+│       ├── providers.py  # LLMClient protocol, MockLLMClient, OpenAILikeClient
+│       ├── validators.py # Claim grounding & phantom citation validator
+│       └── synthesizer.py# Pipeline orchestrator
 ├── tests/                # Test suite
 │   ├── __init__.py
 │   ├── test_foundation.py     # M0 foundation tests
 │   ├── test_retrieval.py      # M1 unit tests (offline/mocked)
 │   ├── test_openalex_live.py  # M1 live integration test
-│   └── test_evidence.py       # M2 evidence & retrieval unit tests
+│   ├── test_evidence.py       # M2 evidence & retrieval unit tests
+│   └── test_synthesis.py      # M3 synthesis & validation unit tests
 ├── data/                 # Research data (generated locally; not committed)
 │   ├── raw/
 │   └── processed/
