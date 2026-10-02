@@ -47,6 +47,22 @@ class EvidenceSource:
         data["short_id"] = self.short_id
         return data
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EvidenceSource":
+        """Reconstruct EvidenceSource from dictionary."""
+        authors = tuple(data.get("authors") or ())
+        return cls(
+            openalex_id=data.get("openalex_id") or "",
+            paper_title=data.get("paper_title"),
+            publication_year=data.get("publication_year"),
+            doi=data.get("doi"),
+            landing_page_url=data.get("landing_page_url"),
+            venue=data.get("venue"),
+            authors=authors,
+            source_database=data.get("source_database", "OpenAlex"),
+        )
+
+
 
 @dataclass
 class NormalizedDocument:
@@ -138,10 +154,11 @@ class EvidenceChunk:
     char_count: int
     word_count: int
     chunk_index: int
+    embedding: list[float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert EvidenceChunk to a JSON-serializable dictionary."""
-        return {
+        d = {
             "chunk_id": self.chunk_id,
             "document_id": self.document_id,
             "source": self.source.to_dict(),
@@ -152,6 +169,32 @@ class EvidenceChunk:
             "word_count": self.word_count,
             "chunk_index": self.chunk_index,
         }
+        if self.embedding is not None:
+            d["embedding"] = list(self.embedding)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], source: EvidenceSource | None = None) -> "EvidenceChunk":
+        """Reconstruct EvidenceChunk from dictionary."""
+        src = source or EvidenceSource.from_dict(data.get("source") or {})
+        raw_type = data.get("evidence_type", "abstract")
+        if isinstance(raw_type, str):
+            evidence_type = EvidenceType(raw_type)
+        else:
+            evidence_type = raw_type
+
+        return cls(
+            chunk_id=str(data.get("chunk_id") or ""),
+            document_id=str(data.get("document_id") or ""),
+            source=src,
+            evidence_type=evidence_type,
+            section=str(data.get("section") or "abstract"),
+            text=str(data.get("text") or ""),
+            char_count=int(data.get("char_count") or len(str(data.get("text") or ""))),
+            word_count=int(data.get("word_count") or len(str(data.get("text") or "").split())),
+            chunk_index=int(data.get("chunk_index") or 0),
+            embedding=data.get("embedding"),
+        )
 
 
 @dataclass
@@ -161,6 +204,7 @@ class EvidenceMatch:
     chunk: EvidenceChunk
     score: float
     matched_terms: list[str] = field(default_factory=list)
+    retrieval_mode: str = "bm25"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert EvidenceMatch to dictionary."""
@@ -168,4 +212,5 @@ class EvidenceMatch:
             "chunk": self.chunk.to_dict(),
             "score": round(self.score, 4),
             "matched_terms": self.matched_terms,
+            "retrieval_mode": self.retrieval_mode,
         }

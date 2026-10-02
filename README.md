@@ -148,39 +148,44 @@ python -m app.main "Can machine learning improve early detection of Alzheimer's 
 python -m app.main "Alzheimer biomarkers" --extract-evidence --top-k 3 --export data/evidence.json
 ```
 
-## M3 — Scientific Evidence Synthesis
+## M3 — Persistent Storage, Dense Embeddings, Hybrid Retrieval & Synthesis
 
-Milestone M3 transforms ranked evidence items into a structured, evidence-grounded scientific synthesis. ATHENA does **not** perform generic, ungrounded paper summarization. Instead, the model is strictly constrained to synthesize findings solely from controlled evidence chunks retrieved by M2, and every scientific claim is cross-validated against genuine chunk identifiers.
+Milestone M3 advances ATHENA from a transient, lexical-only prototype into a persistent, multi-modal evidence retrieval and synthesis engine:
+
+1. **Persistent Evidence Storage**:
+   - Backed by pure Python standard-library `sqlite3` (no external database server needed, zero C-compiler dependencies).
+   - Preserves complete document provenance: OpenAlex ID, DOI, source URL, title, authors, publication year, venue, evidence type, section, and text.
+2. **Dense Vector Embeddings & Semantic Retrieval**:
+   - Local, model-agnostic `EmbeddingClient` protocol.
+   - `MockEmbeddingClient`: 100% deterministic, offline, zero-network unit-normalized vector generation.
+   - `OllamaEmbeddingClient`: Integrates with local Ollama (`qwen2.5:7b`, `nomic-embed-text`) using standard HTTP without paid APIs.
+   - Computes exact cosine similarities with pure-Python vector math.
+3. **Hybrid Retrieval (BM25 + Dense Vector RRF)**:
+   - Merges lexical BM25Okapi keyword scores with dense semantic vector similarities using **Reciprocal Rank Fusion (RRF)**:
+     $$\text{RRF\_Score}(d) = \frac{w_{\text{lex}}}{60 + r_{\text{lex}}(d)} + \frac{w_{\text{sem}}}{60 + r_{\text{sem}}(d)}$$
+   - Seamlessly returns ranked `EvidenceMatch` items compatible with downstream synthesis.
+4. **Structured Scientific Synthesis & Claim Grounding**:
+   - Strictly validates all generated claim citations against genuine chunk IDs.
+   - Computes `grounding_score`, isolates phantom citations, and resolves full paper provenance.
 
 > **Scope Boundary**:
-> M3 synthesizes evidence supplied by M2 and validates claim grounding.
-> M3 does **not** perform candidate research-gap discovery (M4), hypothesis generation (M5), critic verification (M6), automated experimentation, or autonomous scientific discovery. Those capabilities belong to subsequent milestones.
+> M3 retrieves, stores, indexes, and synthesizes evidence supplied by M1/M2.
+> M3 does **not** perform candidate research-gap discovery (M4), hypothesis generation (M5), critic verification (M6), automated experimentation, or autonomous scientific discovery. Those belong to subsequent milestones.
 
-### Key Capabilities:
-- **Model-Agnostic LLM Layer**: Protocol-driven `LLMClient` supporting:
-  - `mock`: 100% offline, zero-network, deterministic client for development and tests (no API key required).
-  - `ollama`: Free local inference using OpenAI-compatible endpoints (`http://localhost:11434/v1`) without paid services.
-  - `openai` / `openrouter`: Commercial or open-router endpoints using the existing `httpx` client.
-- **Strict Grounding Prompts**: Prompts explicitly forbid hallucinating citations, authors, DOIs, or findings, and enforce structured JSON output.
-- **Claim & Citation Validation Engine**:
-  - Validates every cited evidence ID against input `EvidenceChunk` IDs.
-  - Categorizes claims as `SUPPORTED`, `PARTIALLY_VALID`, or `UNSUPPORTED`.
-  - Flags phantom/hallucinated citations in `invalid_evidence_ids`.
-  - Computes an objective `grounding_score` ($\text{valid\_citations} / \max(1, \text{total\_citations})$).
-- **Full Provenance Preservation**: Maps every verified citation directly back to its originating paper title, authors, publication year, venue, DOI, and OpenAlex ID.
-- **Zero-Evidence Safe Fallback**: When no evidence is retrieved, ATHENA returns a structured notice of insufficient evidence without invoking the LLM.
-
-### How to Run Evidence Synthesis:
+### How to Run:
 
 ```bash
-# Offline synthesis using the mock provider (no API key or network required)
-python -m app.main "perovskite solar cell efficiency" --extract-evidence --top-k 5 --synthesize --llm-provider mock
+# 1. Hybrid retrieval (BM25 + Semantic RRF) with mock provider (100% offline)
+python -m app.main "perovskite solar cell efficiency" --extract-evidence --retrieval-mode hybrid --top-k 5
 
-# Export synthesis and literature data to JSON
-python -m app.main "CRISPR base editing" --synthesize --llm-provider mock --export data/synthesis.json
+# 2. Persist extracted evidence chunks to SQLite database
+python -m app.main "CRISPR gene therapy" --extract-evidence --persist-evidence --db-path data/athena_evidence.db
 
-# Using a local Ollama server (e.g. llama3.1:8b)
-python -m app.main "mRNA vaccine stability" --synthesize --llm-provider ollama --llm-model llama3.1:8b
+# 3. Hybrid retrieval + Synthesis with mock LLM (offline demo)
+python -m app.main "mRNA vaccine stability" --extract-evidence --retrieval-mode hybrid --synthesize --llm-provider mock
+
+# 4. Hybrid retrieval + Synthesis with local Ollama
+python -m app.main "Alzheimer biomarkers" --extract-evidence --retrieval-mode hybrid --embedding-provider ollama --synthesize --llm-provider ollama --llm-model qwen2.5:7b
 ```
 
 ## Project structure
@@ -196,13 +201,17 @@ ATHENA/
 │   │   ├── models.py     # Paper & OpenAccess data models
 │   │   ├── openalex.py   # OpenAlex REST client & work parser
 │   │   └── utils.py      # Abstract reconstructor & query validator
-│   ├── evidence/         # Document processing & evidence retrieval (M2)
+│   ├── evidence/         # Document processing, storage & retrieval (M2 & M3)
 │   │   ├── __init__.py   # Evidence API exports
 │   │   ├── cleaner.py    # Scientific text normalizer
 │   │   ├── models.py     # NormalizedDocument, EvidenceChunk, EvidenceMatch
 │   │   ├── normalizer.py # Paper to NormalizedDocument transformer
 │   │   ├── chunker.py    # Scientific sentence splitter & chunker
-│   │   ├── retriever.py  # In-memory BM25Okapi search engine
+│   │   ├── store.py      # Persistent SQLite evidence storage (M3)
+│   │   ├── embeddings.py # Local & mock dense embedding layer (M3)
+│   │   ├── vector_index.py# Pure-Python dense vector index & cosine retrieval (M3)
+│   │   ├── retriever.py  # In-memory BM25Okapi search engine (M2)
+│   │   ├── hybrid.py     # Hybrid BM25 + Vector RRF retrieval engine (M3)
 │   │   └── context.py    # Context assembly & citation formatting
 │   └── synthesis/        # Scientific evidence synthesis (M3)
 │       ├── __init__.py   # Synthesis API exports
@@ -216,9 +225,12 @@ ATHENA/
 │   ├── test_foundation.py     # M0 foundation tests
 │   ├── test_retrieval.py      # M1 unit tests (offline/mocked)
 │   ├── test_openalex_live.py  # M1 live integration test
-│   ├── test_evidence.py       # M2 evidence & retrieval unit tests
+│   ├── test_evidence.py       # M2 evidence processing tests
+│   ├── test_storage.py        # M3 persistent SQLite storage tests
+│   ├── test_retrieval_m3.py   # M3 embeddings, vector & hybrid retrieval tests
 │   └── test_synthesis.py      # M3 synthesis & validation unit tests
 ├── data/                 # Research data (generated locally; not committed)
+│   ├── athena_evidence.db     # Local SQLite persistent evidence store
 │   ├── raw/
 │   └── processed/
 ├── docs/                 # Documentation

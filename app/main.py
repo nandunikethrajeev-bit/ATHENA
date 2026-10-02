@@ -24,8 +24,11 @@ try:
     from app import __version__
     from app.evidence import (
         EvidenceIndex,
+        EvidenceStore,
+        HybridRetriever,
         build_evidence_context,
         chunk_documents,
+        get_embedding_client,
         normalize_paper,
     )
     from app.retrieval import (
@@ -48,8 +51,11 @@ except ModuleNotFoundError:  # pragma: no cover - direct-script fallback
     from app import __version__
     from app.evidence import (
         EvidenceIndex,
+        EvidenceStore,
+        HybridRetriever,
         build_evidence_context,
         chunk_documents,
+        get_embedding_client,
         normalize_paper,
     )
     from app.retrieval import (
@@ -159,6 +165,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Model name for synthesis (e.g. gpt-4o-mini, llama3.1:8b)",
     )
     parser.add_argument(
+        "--persist-evidence",
+        action="store_true",
+        default=False,
+        help="Persist extracted evidence chunks and provenance to SQLite database (Milestone M3)",
+    )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default="data/athena_evidence.db",
+        help="Path to SQLite evidence database (default: data/athena_evidence.db)",
+    )
+    parser.add_argument(
+        "--retrieval-mode",
+        type=str,
+        default="bm25",
+        choices=["bm25", "semantic", "hybrid"],
+        help="Evidence retrieval mode: bm25, semantic, or hybrid (default: bm25)",
+    )
+    parser.add_argument(
+        "--embedding-provider",
+        type=str,
+        default="mock",
+        help="Embedding provider: mock (default for offline/testing) or ollama",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default=None,
+        help="Embedding model tag (e.g. nomic-embed-text, qwen2.5:7b)",
+    )
+    parser.add_argument(
         "--export",
         type=str,
         default=None,
@@ -239,9 +276,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         all_chunks = chunk_documents(extracted_docs)
         print(f"[M2] Extracted {len(all_chunks)} chunk(s) across {len(extracted_docs)} paper(s).")
 
-        index = EvidenceIndex()
-        index.index_chunks(all_chunks)
-        retrieved_matches = index.retrieve(query=args.query, top_k=args.top_k)
+        if args.persist_evidence:
+            print(f"[M3] Persisting {len(all_chunks)} chunk(s) to SQLite store ({args.db_path})...")
+            store = EvidenceStore(args.db_path)
+            store.save_chunks(all_chunks)
+            store.close()
+
+        if args.retrieval_mode in ("semantic", "hybrid"):
+            print(f"[M3] Initializing {args.retrieval_mode} retrieval with embedding provider: {args.embedding_provider}...")
+            embedder = get_embedding_client(
+                provider=args.embedding_provider,
+                model=args.embedding_model,
+            )
+            retriever = HybridRetriever(embedding_client=embedder)
+            retriever.index_chunks(all_chunks)
+            retrieved_matches = retriever.retrieve(
+                query=args.query,
+                top_k=args.top_k,
+                mode=args.retrieval_mode,
+            )
+        else:
+            index = EvidenceIndex()
+            index.index_chunks(all_chunks)
+            retrieved_matches = index.retrieve(query=args.query, top_k=args.top_k)
 
         context_output = build_evidence_context(
             query=args.query,
