@@ -7,9 +7,9 @@ scientific literature, organizing evidence, synthesizing findings across
 studies, identifying candidate research gaps, generating candidate hypotheses,
 and producing source-traceable research reports.
 
-> **Status: active development (M0 — project foundation, M1 — scientific literature retrieval, M2 — document processing & evidence retrieval, and M3 — scientific evidence synthesis complete).**
-> ATHENA can now retrieve real scientific literature from OpenAlex, clean scientific text, chunk and rank evidence using deterministic BM25 retrieval, and synthesize structured, evidence-grounded scientific claims with provenance validation.
-> Subsequent stages (research-gap analysis, hypothesis generation, report generation) remain planned.
+> **Status: active development (M0 — project foundation, M1 — scientific literature retrieval, M2 — document processing & evidence retrieval, M3 — scientific evidence synthesis, and M4 — candidate research-gap analysis complete).**
+> ATHENA can now retrieve real scientific literature from OpenAlex, clean scientific text, chunk and rank evidence using deterministic BM25 / dense semantic / hybrid retrieval, synthesize structured evidence-grounded claims, and discover validated candidate research gaps anchored directly to scientific evidence.
+> Subsequent stages (hypothesis generation, critic verification, report generation) remain planned.
 
 ## What ATHENA is — and is not
 
@@ -62,7 +62,7 @@ Research Question
 | M1 | Scientific literature retrieval (free/public APIs) | ✅ complete |
 | M2 | Document processing & evidence retrieval | ✅ complete |
 | M3 | Scientific evidence synthesis & claim grounding | ✅ complete |
-| M4 | Candidate research-gap analysis | planned |
+| M4 | Candidate research-gap analysis & validation | ✅ complete |
 | M5 | Candidate hypothesis generation | planned |
 | M6 | Critic / evidence verification | planned |
 | M7 | Research report generation | planned |
@@ -188,6 +188,45 @@ python -m app.main "mRNA vaccine stability" --extract-evidence --retrieval-mode 
 python -m app.main "Alzheimer biomarkers" --extract-evidence --retrieval-mode hybrid --embedding-provider ollama --synthesize --llm-provider ollama --llm-model qwen2.5:7b
 ```
 
+## M4 — Candidate Research-Gap Analysis & Validation
+
+Milestone M4 enables ATHENA to discover, structure, and validate candidate scientific research gaps from synthesized literature. Rather than generating ungrounded speculative ideas, M4 strictly grounds candidate research gaps in synthesized claims ($C_1$, $C_2$, etc.) and original evidence chunks ($W...-abs-...$).
+
+### Key Capabilities:
+1. **Taxonomy-Governed Gap Discovery**:
+   - `CONTRADICTION`: Conflicting findings or unresolved empirical disputes across literature.
+   - `METHODOLOGICAL`: Limitations in experimental protocols, assay designs, sample sizes, animal models, or lack of negative controls.
+   - `COVERAGE_SCOPE`: Unexplored materials, untested conditions, operational regimes, or unstudied populations.
+   - `UNVERIFIED_CLAIM`: Mechanistic claims, hypothesized pathways, or theoretical models lacking empirical validation.
+2. **Deterministic Dual Anchoring**:
+   - Every candidate gap must cite both its supporting synthesis claim IDs (`source_claim_ids`) and underlying evidence chunk IDs (`evidence_ids`).
+3. **Rigorous Grounding Validation**:
+   - `GapValidationReport` validates cited claim IDs and evidence chunk IDs, detects invalid/phantom IDs, and computes an automated `grounding_score`.
+   - Resolves full bibliographic metadata (`DOI`, title, authors, publication year) for every cited evidence chunk.
+4. **Epistemic Humility & Guardrails**:
+   - Explicitly framed as candidate gaps within the retrieved literature subset, not proof of universal scientific absence or novelty.
+   - Gaps lacking supporting citations are flagged as `UNSUPPORTED CITATION(S)`.
+
+> **Scope Boundary**:
+> M4 identifies candidate research gaps in the synthesized literature.
+> M4 does **not** generate candidate hypotheses (M5), perform automated experimentation, or autonomously draft publication manuscripts. Those belong to subsequent milestones.
+
+### How to Run Research-Gap Analysis:
+
+```bash
+# 1. Full pipeline: Retrieval -> Evidence -> Synthesis -> Research Gaps (Mock LLM, 100% offline)
+python -m app.main "perovskite solar cells stability" --extract-evidence --synthesize --analyze-gaps --llm-provider mock
+
+# 2. Filter gaps by taxonomy type (e.g. methodological gaps)
+python -m app.main "mRNA vaccine delivery" --analyze-gaps --gap-type methodological --llm-provider mock
+
+# 3. Export end-to-end results including papers, evidence, synthesis, and research gaps to JSON
+python -m app.main "solid state lithium battery" --analyze-gaps --llm-provider mock --export data/gap_analysis.json
+
+# 4. Live local analysis using Ollama (qwen2.5:7b)
+python -m app.main "CRISPR off-target detection" --analyze-gaps --llm-provider ollama --llm-model qwen2.5:7b
+```
+
 ## Project structure
 
 ```
@@ -213,13 +252,19 @@ ATHENA/
 │   │   ├── retriever.py  # In-memory BM25Okapi search engine (M2)
 │   │   ├── hybrid.py     # Hybrid BM25 + Vector RRF retrieval engine (M3)
 │   │   └── context.py    # Context assembly & citation formatting
-│   └── synthesis/        # Scientific evidence synthesis (M3)
-│       ├── __init__.py   # Synthesis API exports
-│       ├── models.py     # ResearchSynthesis, SynthesizedClaim, EvidenceReference
-│       ├── prompts.py    # Deterministic prompt construction & integrity clauses
-│       ├── providers.py  # LLMClient protocol, MockLLMClient, OpenAILikeClient
-│       ├── validators.py # Claim grounding & phantom citation validator
-│       └── synthesizer.py# Pipeline orchestrator
+│   ├── synthesis/        # Scientific evidence synthesis (M3)
+│   │   ├── __init__.py   # Synthesis API exports
+│   │   ├── models.py     # ResearchSynthesis, SynthesizedClaim, EvidenceReference
+│   │   ├── prompts.py    # Deterministic prompt construction & integrity clauses
+│   │   ├── providers.py  # LLMClient protocol, MockLLMClient, OpenAILikeClient
+│   │   ├── validators.py # Claim grounding & phantom citation validator
+│   │   └── synthesizer.py# Pipeline orchestrator
+│   └── gaps/             # Candidate research-gap analysis (M4)
+│       ├── __init__.py   # Gap API exports
+│       ├── models.py     # CandidateGap, GapType, GapValidationReport, ResearchGapAnalysis
+│       ├── prompts.py    # Deterministic gap prompt builder & integrity clauses
+│       ├── validators.py # Provenance validator & grounding auditor
+│       └── analyzer.py   # Gap discovery orchestrator
 ├── tests/                # Test suite
 │   ├── __init__.py
 │   ├── test_foundation.py     # M0 foundation tests
@@ -228,7 +273,8 @@ ATHENA/
 │   ├── test_evidence.py       # M2 evidence processing tests
 │   ├── test_storage.py        # M3 persistent SQLite storage tests
 │   ├── test_retrieval_m3.py   # M3 embeddings, vector & hybrid retrieval tests
-│   └── test_synthesis.py      # M3 synthesis & validation unit tests
+│   ├── test_synthesis.py      # M3 synthesis & validation unit tests
+│   └── test_gaps.py           # M4 candidate research gap unit & integration tests
 ├── data/                 # Research data (generated locally; not committed)
 │   ├── athena_evidence.db     # Local SQLite persistent evidence store
 │   ├── raw/

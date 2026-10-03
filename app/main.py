@@ -5,12 +5,14 @@ Milestones supported:
 - M1: Scientific literature retrieval from OpenAlex
 - M2: Evidence retrieval & document processing
 - M3: Scientific evidence synthesis & claim grounding
+- M4: Candidate research-gap analysis & validation
 
 Usage:
     python -m app.main                                          # Verify system startup / banner
     python -m app.main "research question"                      # Retrieve scientific papers (M1)
     python -m app.main "research question" --extract-evidence   # Extract and retrieve evidence (M2)
     python -m app.main "research question" --extract-evidence --synthesize --llm-provider mock  # Synthesize (M3)
+    python -m app.main "research question" --extract-evidence --synthesize --analyze-gaps --llm-provider mock  # Gaps (M4)
     python -m app.main "research question" --max-results 5 --export data/results.json
 """
 
@@ -30,6 +32,11 @@ try:
         chunk_documents,
         get_embedding_client,
         normalize_paper,
+    )
+    from app.gaps import (
+        GapAnalyzer,
+        GapType,
+        ResearchGapAnalysis,
     )
     from app.retrieval import (
         OpenAlexRateLimitError,
@@ -57,6 +64,11 @@ except ModuleNotFoundError:  # pragma: no cover - direct-script fallback
         chunk_documents,
         get_embedding_client,
         normalize_paper,
+    )
+    from app.gaps import (
+        GapAnalyzer,
+        GapType,
+        ResearchGapAnalysis,
     )
     from app.retrieval import (
         OpenAlexRateLimitError,
@@ -153,6 +165,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Synthesize retrieved evidence into structured scientific claims (Milestone M3)",
     )
     parser.add_argument(
+        "--analyze-gaps",
+        action="store_true",
+        default=False,
+        help="Analyze synthesized evidence to discover candidate research gaps (Milestone M4)",
+    )
+    parser.add_argument(
+        "--gap-type",
+        type=str,
+        default=None,
+        choices=["contradiction", "methodological", "coverage_scope", "unverified_claim"],
+        help="Filter candidate research gaps by taxonomy type (Milestone M4)",
+    )
+    parser.add_argument(
         "--llm-provider",
         type=str,
         default=None,
@@ -219,12 +244,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Bare invocation: print system startup banner and usage instructions
     if args.query is None:
         print(f"ATHENA v{__version__} - Autonomous Scientific Intelligence")
-        print("Status: project foundation (M0) active. Literature retrieval (M1) ready. Evidence retrieval (M2) ready. Evidence synthesis (M3) ready.")
-        print('Usage: python -m app.main "<research question>" [--extract-evidence] [--synthesize] [--llm-provider mock] [--max-results N] [--export output.json]')
+        print("Status: project foundation (M0) active. Literature retrieval (M1) ready. Evidence retrieval (M2) ready. Evidence synthesis (M3) ready. Research gaps (M4) ready.")
+        print('Usage: python -m app.main "<research question>" [--extract-evidence] [--synthesize] [--analyze-gaps] [--llm-provider mock] [--max-results N] [--export output.json]')
         return 0
 
-    # Auto-enable evidence extraction if synthesis is requested
-    if args.synthesize and not args.extract_evidence:
+    # Auto-enable prerequisite stages
+    if args.analyze_gaps:
+        args.synthesize = True
+        args.extract_evidence = True
+    elif args.synthesize and not args.extract_evidence:
         args.extract_evidence = True
 
     print(f"ATHENA v{__version__} — Scientific Research Assistant")
@@ -336,6 +364,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"\n[Synthesis Error] Failed to synthesize evidence: {exc}", file=sys.stderr)
             return 1
 
+    # M4 Candidate Research-Gap Analysis
+    gap_analysis = None
+    if args.analyze_gaps and synthesis is not None:
+        print(f"\n[M4] Analyzing candidate research gaps from scientific synthesis...")
+        try:
+            client = get_llm_client(
+                provider=args.llm_provider,
+                model=args.llm_model,
+            )
+            analyzer = GapAnalyzer(client=client)
+            gap_analysis = analyzer.analyze(
+                synthesis=synthesis,
+                evidence_chunks=all_chunks,
+                filter_type=args.gap_type,
+            )
+            print(f"\n{gap_analysis.to_markdown()}")
+        except LLMConfigurationError as exc:
+            print(f"\n[LLM Configuration Error] {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"\n[Gap Analysis Error] Failed to analyze research gaps: {exc}", file=sys.stderr)
+            return 1
+
     if args.export:
         export_path = Path(args.export)
         try:
@@ -352,6 +403,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 export_data["retrieved_matches"] = [m.to_dict() for m in retrieved_matches]
             if args.synthesize and synthesis is not None:
                 export_data["synthesis"] = synthesis.to_dict()
+            if args.analyze_gaps and gap_analysis is not None:
+                export_data["research_gaps"] = gap_analysis.to_dict()
 
             with open(export_path, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)

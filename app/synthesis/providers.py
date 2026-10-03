@@ -86,6 +86,27 @@ class MockLLMClient:
                 })
             return json.dumps(mock_payload, indent=2)
 
+        # Dynamic mock generation for gap analysis prompts
+        if "candidate research gaps" in (system_prompt or "").lower() or "candidate research gaps" in prompt.lower():
+            claim_ids = re.findall(r"\[(C\d+)\]", prompt)
+            ev_ids = re.findall(r"([A-Za-z0-9_\-]+-(?:abs|meta|body|sec)[A-Za-z0-9_\-]*)", prompt)
+            cid = claim_ids[0] if claim_ids else "C1"
+            eid = ev_ids[0] if ev_ids else "E1"
+            mock_gaps: dict[str, Any] = {
+                "gaps": [
+                    {
+                        "gap_id": "G1",
+                        "title": "Long-term operational degradation and environmental stress resilience",
+                        "description": "Systematic evaluation of operational stability under prolonged real-world stress profiles remains unaddressed.",
+                        "gap_type": "coverage_scope",
+                        "rationale": "Synthesized claims demonstrate initial baseline metrics, but long-term degradation mechanisms under combined stressors are not characterized.",
+                        "source_claim_ids": [cid],
+                        "evidence_ids": [eid],
+                    }
+                ]
+            }
+            return json.dumps(mock_gaps, indent=2)
+
         return "{}"
 
 
