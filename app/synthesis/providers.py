@@ -107,6 +107,33 @@ class MockLLMClient:
             }
             return json.dumps(mock_gaps, indent=2)
 
+        # Dynamic mock generation for hypothesis generation prompts
+        if "candidate hypotheses" in (system_prompt or "").lower() or "candidate hypotheses" in prompt.lower() or "hypothesis generation" in (system_prompt or "").lower():
+            gap_ids = re.findall(r"\[(G\d+)\]", prompt)
+            claim_ids = re.findall(r"\[(C\d+)\]", prompt)
+            ev_ids = re.findall(r"([A-Za-z0-9_\-]+-(?:abs|meta|body|sec)[A-Za-z0-9_\-]*)", prompt)
+            gid = gap_ids[0] if gap_ids else "G1"
+            cid = claim_ids[0] if claim_ids else "C1"
+            eid = ev_ids[0] if ev_ids else "E1"
+            mock_hypotheses: dict[str, Any] = {
+                "hypotheses": [
+                    {
+                        "hypothesis_id": "H1",
+                        "target_gap_id": gid,
+                        "title": "Passivation layer optimization for prolonged operational resilience",
+                        "statement": "Application of a hydrophobic 2D capping layer onto the perovskite absorber will reduce degradation kinetics by >40% under prolonged continuous operational exposure.",
+                        "rationale": "Reported findings show high initial performance but identify uncharacterized operational degradation under stress (addressed in target gap).",
+                        "proposed_mechanism": "Steric shielding and defect passivation at grain boundaries inhibit moisture infiltration and ion migration pathways.",
+                        "independent_variables": ["Capping layer composition", "Exposure duration (hours)"],
+                        "dependent_variables": ["Power conversion efficiency retention (%)", "Defect trap density (cm^-3)"],
+                        "falsification_criteria": "If degradation kinetics remain statistically indistinguishable from unpassivated controls (p > 0.05) or PCE loss exceeds 20% within 200 hours, the hypothesis is refuted.",
+                        "source_claim_ids": [cid],
+                        "evidence_ids": [eid],
+                    }
+                ]
+            }
+            return json.dumps(mock_hypotheses, indent=2)
+
         return "{}"
 
 
